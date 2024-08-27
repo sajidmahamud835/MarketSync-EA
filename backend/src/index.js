@@ -5,56 +5,68 @@ const app = express();
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Storage for account data
 let accountData = [];
 
-// Function to determine strategy details
-function determineStrategyDetails(strategyType) {
-    switch (strategyType) {
-        case "short term gain":
-            return {
-                creationTimestamp: new Date().toISOString(),
-                type: 'scalping',
-                validity: 3600, // Validity in seconds (1 hour)
-                expiryDate: new Date(Date.now() + 3600 * 1000).toISOString(), // Current date + validity
-                targetProfit: 1000, // Example value
-                maxLoss: 500, // Example value
-                maxPing: 100, // Example value (milliseconds)
-                maxSlippage: 10, // Example value (points)
-                stopLoss: 15, // Example value (pips)
-                takeProfit: 50 // Example value (pips)
-            };
-        case "long term gain":
-            return {
-                creationTimestamp: new Date().toISOString(),
-                type: 'scalping',
-                validity: 86400 * 30, // Validity in seconds (30 days)
-                expiryDate: new Date(Date.now() + 86400 * 30 * 1000).toISOString(), // Current date + validity
-                targetProfit: 5000, // Example value
-                maxLoss: 2000, // Example value
-                maxPing: 200, // Example value (milliseconds)
-                maxSlippage: 20, // Example value (points)
-                stopLoss: 30, // Example value (pips)
-                takeProfit: 100 // Example value (pips)
-            };
-        default:
-            return {
-                creationTimestamp: new Date().toISOString(),
-                type: 'scalping',
-                validity: 86400 * 30, // Validity in seconds (30 days)
-                expiryDate: new Date(Date.now() + 86400 * 30 * 1000).toISOString(), // Current date + validity
-                targetProfit: 500, // Example value
-                maxLoss: 200, // Example value
-                maxPing: 150, // Example value (milliseconds)
-                maxSlippage: 15, // Example value (points)
-                stopLoss: 10, // Example value (pips)
-                takeProfit: 25 // Example value (pips)
-            };
+async function getStrategyDetailsFromChatGPT(accountDataReceived) {
+    const messages = [
+        {
+            role: "system",
+            content: "You are an AI assistant that provides trading strategies based on predefined parameters. Respond only in the specified JSON format."
+        },
+        {
+            role: "user",
+            content: `
+                {
+                    "strategy_type": "scalping",
+                    "account_number": "${accountDataReceived.account_number}",
+                    "trading_mode": "${accountDataReceived.trading_mode}",
+                    "max_loss": ${accountDataReceived.max_loss},
+                    "account_type": "${accountDataReceived.account_type}",
+                    "account_currency": "${accountDataReceived.account_currency}",
+                    "account_company": "${accountDataReceived.account_company}",
+                    "leverage": ${accountDataReceived.leverage},
+                    "account_name": "${accountDataReceived.account_name}",
+                    "trade_allowed": ${accountDataReceived.trade_allowed}
+                }
+
+                Please respond in the following JSON format:
+                {
+                    "creationTimestamp": "string (ISO 8601 format)",
+                    "type": "string",
+                    "validity": "number (seconds)",
+                    "expiryDate": "string (ISO 8601 format)",
+                    "targetProfit": "number",
+                    "maxLoss": "number",
+                    "maxPing": "number (milliseconds)",
+                    "maxSlippage": "number (points)",
+                    "lotSize": "number",
+                    "stopLoss": "number (pips)",
+                    "takeProfit": "number (pips)"
+                }
+            `
+        }
+    ];
+
+    try {
+        const response = await tradeGPT({
+            model: "trade-gpt",
+            messages,
+            temperature: 0.7,
+            max_tokens: 150,
+            top_p: 1.0,
+            frequency_penalty: 0.0,
+            presence_penalty: 0.0
+        });
+
+        return response.choices[0].message.content;
+
+    } catch (error) {
+        console.error('Error fetching strategy details from ChatGPT:', error);
+        throw new Error('Failed to retrieve strategy details');
     }
 }
 
-// Handle sync endpoint for static account data
-app.post('/api/sync', (req, res) => {
+app.post('/api/sync', async (req, res) => {
     const accountDataReceived = req.body;
 
     if (!accountDataReceived?.account_number || typeof accountDataReceived.account_number !== 'string' ||
@@ -76,31 +88,26 @@ app.post('/api/sync', (req, res) => {
             leverage: accountDataReceived.leverage,
             account_name: accountDataReceived.account_name,
             trade_allowed: accountDataReceived.trade_allowed,
-            account_updates: [], // Initialize empty array for dynamic updates
-            strategies: [] // Initialize empty array for strategies
+            account_updates: [],
+            strategies: []
         };
         accountData.push(accountEntry);
     } else {
-        accountEntry.access_token = accountDataReceived.access_token;
-        accountEntry.trading_mode = accountDataReceived.trading_mode;
-        accountEntry.max_loss = accountDataReceived.max_loss;
-        accountEntry.strategy_type = accountDataReceived.strategy_type;
-        accountEntry.account_type = accountDataReceived.account_type;
-        accountEntry.account_currency = accountDataReceived.account_currency;
-        accountEntry.account_company = accountDataReceived.account_company;
-        accountEntry.leverage = accountDataReceived.leverage;
-        accountEntry.account_name = accountDataReceived.account_name;
-        accountEntry.trade_allowed = accountDataReceived.trade_allowed;
+        Object.assign(accountEntry, accountDataReceived);
     }
 
-    const strategyDetails = determineStrategyDetails(accountDataReceived.strategy_type);
-    accountEntry.strategies.push(strategyDetails);
+    try {
+        const strategyDetails = await getStrategyDetailsFromChatGPT(accountDataReceived);
+        accountEntry.strategies.push(JSON.parse(strategyDetails));
 
-    return res.json({ strategy: strategyDetails });
+        return res.json({ strategy: JSON.parse(strategyDetails) });
+
+    } catch (error) {
+        return res.status(500).json({ error: 'Failed to retrieve strategy details' });
+    }
 });
 
-// Handle sync endpoint for dynamic account data
-app.post('/api/sync/:accountNumber', (req, res) => {
+app.post('/api/dataSync/:accountNumber', (req, res) => {
     const accountNumber = req.params.accountNumber;
     const dynamicDataReceived = req.body;
     const receivedTime = new Date().toISOString();
@@ -112,6 +119,7 @@ app.post('/api/sync/:accountNumber', (req, res) => {
     }
 
     let accountEntry = accountData.find(entry => entry.account_number === accountNumber);
+
     if (accountEntry) {
         accountEntry.account_updates.push({
             time: receivedTime,
@@ -129,7 +137,6 @@ app.post('/api/sync/:accountNumber', (req, res) => {
     }
 });
 
-// Handle strategy retrieval endpoint
 app.get('/api/strategy/:accountNumber', (req, res) => {
     const accountNumber = req.params.accountNumber;
 
@@ -137,24 +144,81 @@ app.get('/api/strategy/:accountNumber', (req, res) => {
 
     if (accountEntry && accountEntry.strategies.length > 0) {
         const lastStrategy = accountEntry.strategies[accountEntry.strategies.length - 1];
-        return res.json({
-            strategyType: accountEntry.strategy_type,
-            lastStrategy
-        });
+        return res.json({ strategyType: accountEntry.strategy_type, lastStrategy });
     } else {
         return res.status(404).json({ error: 'Account not found or no strategy available' });
     }
 });
 
-// Handle endpoint for retrieving all account data
 app.get('/api/accounts', (req, res) => {
-    return res.json({
-        count: accountData.length,
-        accounts: accountData
-    });
+    return res.json({ count: accountData.length, accounts: accountData });
 });
 
-// Start the server
 app.listen(5000, () => {
     console.log('Server is running on port 5000');
 });
+
+async function tradeGPT({ model, messages, temperature, max_tokens, top_p, frequency_penalty, presence_penalty }) {
+    const strategyTypeMatch = messages.find(msg => msg.role === "user").content.match(/"strategy_type": "(.*?)"/);
+    const strategyType = strategyTypeMatch ? strategyTypeMatch[1] : "scalping";
+
+    const equityOrBalance = 10000;
+    let lotSize = 0.1;
+
+    let mockResponse = {
+        creationTimestamp: new Date().toISOString(),
+        type: strategyType,
+        validity: 3600,
+        expiryDate: new Date(Date.now() + 3600000).toISOString()
+    };
+
+    switch (strategyType) {
+        case "reversal":
+            mockResponse.targetProfit = Math.random() * 0.05 * equityOrBalance + 0.01 * equityOrBalance;
+            mockResponse.maxLoss = Math.random() * 0.03 * equityOrBalance + 0.01 * equityOrBalance;
+            mockResponse.stopLoss = Math.floor(Math.random() * 40 + 20);
+            mockResponse.takeProfit = Math.floor(Math.random() * 100 + 50);
+            lotSize = 0.02;
+            break;
+        case "scalping":
+            mockResponse.targetProfit = Math.random() * 0.01 * equityOrBalance + 0.005 * equityOrBalance;
+            mockResponse.maxLoss = Math.random() * 0.01 * equityOrBalance + 0.002 * equityOrBalance;
+            mockResponse.stopLoss = Math.floor(Math.random() * 20 + 10);
+            mockResponse.takeProfit = Math.floor(Math.random() * 30 + 15);
+            lotSize = 0.05;
+            break;
+        case "breakout":
+            mockResponse.targetProfit = Math.random() * 0.10 * equityOrBalance + 0.03 * equityOrBalance;
+            mockResponse.maxLoss = Math.random() * 0.05 * equityOrBalance + 0.02 * equityOrBalance;
+            mockResponse.stopLoss = Math.floor(Math.random() * 60 + 30);
+            mockResponse.takeProfit = Math.floor(Math.random() * 120 + 60);
+            lotSize = 0.1;
+            break;
+        case "momentum":
+            mockResponse.targetProfit = Math.random() * 0.07 * equityOrBalance + 0.02 * equityOrBalance;
+            mockResponse.maxLoss = Math.random() * 0.04 * equityOrBalance + 0.01 * equityOrBalance;
+            mockResponse.stopLoss = Math.floor(Math.random() * 50 + 25);
+            mockResponse.takeProfit = Math.floor(Math.random() * 100 + 50);
+            lotSize = 0.07;
+            break;
+        case "news":
+            mockResponse.targetProfit = Math.random() * 0.15 * equityOrBalance + 0.05 * equityOrBalance;
+            mockResponse.maxLoss = Math.random() * 0.08 * equityOrBalance + 0.03 * equityOrBalance;
+            mockResponse.stopLoss = Math.floor(Math.random() * 70 + 35);
+            mockResponse.takeProfit = Math.floor(Math.random() * 140 + 70);
+            lotSize = 0.15;
+            break;
+        default:
+            mockResponse.targetProfit = Math.random() * 1000 + 500;
+            mockResponse.maxLoss = Math.random() * 500 + 100;
+            mockResponse.stopLoss = Math.floor(Math.random() * 40 + 20);
+            mockResponse.takeProfit = Math.floor(Math.random() * 100 + 50);
+            break;
+    }
+
+    mockResponse.lotSize = lotSize;
+    mockResponse.maxPing = Math.floor(Math.random() * 200 + 100);
+    mockResponse.maxSlippage = Math.floor(Math.random() * 10 + 5);
+
+    return { choices: [{ message: { content: JSON.stringify(mockResponse) } }] };
+}

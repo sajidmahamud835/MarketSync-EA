@@ -15,7 +15,7 @@ input string StrategyType = "short term gain";
 input string AccountType = "retail user";
 
 string ServerURL = "http://localhost:5000/api";
-int UpdateInterval = 36000;
+int UpdateInterval = 3600;
 double lotSize = 0.01;
 double stopLossPips = 15;
 double takeProfitPips = 50;
@@ -90,7 +90,7 @@ void SendAccountInfo()
 //+------------------------------------------------------------------+
 void DataSync()
 {
-    string url = ServerURL + "/data_sync";
+    string url = ServerURL + "/dataSync"+IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN));
     string headers = "Content-Type: application/x-www-form-urlencoded\r\n";
     string postData = "access_token=" + AccessToken + 
                       "&account_number=" + IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN)) +
@@ -134,9 +134,10 @@ string GetStrategyFromServer()
         
         // Parse the JSON response to get the strategy and other parameters
         strategy = ParseJson(response, "type");
-        lotSize = StringToDouble(ParseJson(response, "lotSize"));
-        stopLossPips = StringToDouble(ParseJson(response, "stopLoss"));
-        takeProfitPips = StringToDouble(ParseJson(response, "takeProfit"));
+        lotSize = StringToDouble(ParseJson(response, "lotSize", true));
+        Print("Lot Size: ", lotSize);
+        stopLossPips = StringToDouble(ParseJson(response, "stopLoss", true));
+        takeProfitPips = StringToDouble(ParseJson(response, "takeProfit", true));
         
         return strategy;
     }
@@ -207,20 +208,35 @@ void ApplyScalping()
     }
 }
 
-//+------------------------------------------------------------------+
-//| Parse JSON response manually                                     |
-//+------------------------------------------------------------------+
-string ParseJson(const string &json, const string &key)
+string ParseJson(const string &json, const string &key, bool isNumeric = false)
 {
-    int keyIndex = StringFind(json, "\"" + key + "\":\"");
+    int keyIndex = StringFind(json, "\"" + key + "\":");
     if (keyIndex == -1) return "";
 
-    int valueStart = keyIndex + StringLen(key) + 4;
-    int valueEnd = StringFind(json, "\"", valueStart);
-    if (valueEnd == -1) return "";
+    int valueStart = keyIndex + StringLen(key) + 3;
+    
+    if (!isNumeric)
+    {
+        if (StringGetCharacter(json, valueStart) == '\"')
+        {
+            valueStart++;
+            int valueEnd = StringFind(json, "\"", valueStart);
+            if (valueEnd == -1) return "";
+            return StringSubstr(json, valueStart, valueEnd - valueStart);
+        }
+    }
+    else
+    {
+        int valueEnd = StringFind(json, ",", valueStart);
+        if (valueEnd == -1) valueEnd = StringFind(json, "}", valueStart);
+        if (valueEnd == -1) return "";
 
-    return StringSubstr(json, valueStart, valueEnd - valueStart);
+        return StringSubstr(json, valueStart, valueEnd - valueStart);
+    }
+
+    return "";
 }
+
 
 //+------------------------------------------------------------------+
 //| Determine if the market is trending up                           |
