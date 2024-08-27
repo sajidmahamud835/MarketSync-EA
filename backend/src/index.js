@@ -8,6 +8,8 @@ app.use(express.urlencoded({ extended: true }));
 let accountData = [];
 
 async function getStrategyDetailsFromChatGPT(accountDataReceived) {
+    const strategies = ["reversal", "scalping", "breakout", "momentum", "news"];
+    const strategy = strategies[Math.floor(Math.random() * strategies.length)];
     const messages = [
         {
             role: "system",
@@ -17,7 +19,7 @@ async function getStrategyDetailsFromChatGPT(accountDataReceived) {
             role: "user",
             content: `
                 {
-                    "strategy_type": "scalping",
+                    "strategy_type": "${strategy}",
                     "account_number": "${accountDataReceived.account_number}",
                     "trading_mode": "${accountDataReceived.trading_mode}",
                     "max_loss": ${accountDataReceived.max_loss},
@@ -107,7 +109,7 @@ app.post('/api/sync', async (req, res) => {
     }
 });
 
-app.post('/api/dataSync/:accountNumber', (req, res) => {
+app.post('/api/dataSync/:accountNumber', async (req, res) => {
     const accountNumber = req.params.accountNumber;
     const dynamicDataReceived = req.body;
     const receivedTime = new Date().toISOString();
@@ -130,6 +132,10 @@ app.post('/api/dataSync/:accountNumber', (req, res) => {
             margin_level: dynamicDataReceived.margin_level,
             profit: dynamicDataReceived.profit
         });
+
+
+        const strategyDetails = await getStrategyDetailsFromChatGPT(accountDataReceived);
+        accountEntry.strategies.push(JSON.parse(strategyDetails));
 
         return res.json({ message: 'Dynamic data received successfully' });
     } else {
