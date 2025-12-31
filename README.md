@@ -96,9 +96,9 @@ The system operates on a decoupled architecture to leverage the strengths of spe
 
 Explore other components of the research portfolio:
 
-1.  **[GridMaster Pro MT5 EA](../grid-master-pro-mt5-ea)** - A dedicated, high-performance Grid Trading implementation without the external AI dependency.
-2.  **[Slippage Tracker Client](../slippage-tracker-client)** - Essential tool for monitoring execution quality and broker latency, crucial for validating EA performance.
-3.  **[BankSync](../banksync)** - Understanding the broader fintech ecosystem with banking integration, relevant for future fund management features.
+1.  **[GridMaster Pro MT5 EA](https://github.com/sajidmahamud835/grid-master-pro-mt5-ea)** - A dedicated, high-performance Grid Trading implementation without the external AI dependency.
+2.  **[Slippage Tracker Client](https://github.com/sajidmahamud835/slippage-tracker-client)** - Essential tool for monitoring execution quality and broker latency, crucial for validating EA performance.
+3.  **[BankSync](https://github.com/sajidmahamud835/banksync)** - Understanding the broader fintech ecosystem with banking integration, relevant for future fund management features.
 
 ---
 
